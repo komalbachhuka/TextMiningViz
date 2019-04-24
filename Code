@@ -1,0 +1,356 @@
+visualization
+set up the libraries
+
+library(SnowballC)
+library(tm)
+## Loading required package: NLP
+library(ggplot2) 
+## 
+## Attaching package: 'ggplot2'
+## The following object is masked from 'package:NLP':
+## 
+##     annotate
+library(ggthemes) 
+read in the text as a single file
+
+#read in the text file from the directory as a csv file
+text.df <- read.csv("C:/Users/bachh/OneDrive/Desktop/Textbooks/Textbooks/TBANLT570/oct_delta.csv")
+#deprecated code from boook - tweets =data.frame( ID = seq( 1: nrow( text.df)), text = text.df $ text) 
+#the first two columns are defined
+#ifusing `DataframeSource` the *first* column **MUST** be named `doc_id` followed by a `text` column.  
+# Any other columns are considered metadata associated row-wise. 
+tweets=data.frame(doc_id=seq(1:nrow(text.df)),text=text.df$text) 
+Now start processing the text
+
+#create a function to change case to lower
+tryTolower <- function( x){ 
+  y = NA 
+  try_error = tryCatch( tolower( x), error = function( e) e) 
+if (! inherits( try_error, 'error')) 
+  y = tolower( x) 
+  return( y) }
+Extend the stopwords file with additional unwanted
+
+#add to stopwords
+custom.stopwords = c( stopwords("english"), "lol", "smh", "delta", "amp")
+make a function that can be used to clean up a corpus
+
+#now set up a function to clean up a corpus
+clean.corpus <- function( corpus){ 
+  corpus <- tm_map( corpus, content_transformer( tryTolower)) 
+  corpus = tm_map( corpus, removeWords, custom.stopwords) 
+  corpus = tm_map( corpus, removePunctuation) 
+  corpus = tm_map( corpus, stripWhitespace) 
+  corpus = tm_map( corpus, removeNumbers) 
+  return( corpus) 
+  } 
+get ready for identifying term frequency from corpus
+
+#corpus <â VCorpus( DataframeSource( tweets), readerControl = list( reader = meta.data.reader)) 
+#create the frequency dataframe
+corpus <- VCorpus( DataframeSource( tweets)) 
+corpus <- clean.corpus( corpus) 
+tdm <- TermDocumentMatrix( corpus, control = list( weighting = weightTf))
+tdm.tweets.m <- as.matrix( tdm) 
+term.freq <- rowSums( tdm.tweets.m) 
+freq.df <- data.frame( word = names( term.freq), frequency = term.freq) 
+freq.df <- freq.df[ order( freq.df[, 2], decreasing = T),]
+use ggplot to plot the most frequent
+
+# plot the terms by frequency
+freq.df$ word <- factor( freq.df $ word, 
+                          levels = unique( as.character( freq.df $ word))) 
+ggplot( freq.df[ 1: 20,], aes( x = word, y = frequency)) + 
+  geom_bar( stat ="identity", fill ='darkred') + 
+  coord_flip() + theme_gdocs() + 
+  geom_text( aes( label = frequency), colour ="white", hjust = 1.25, size = 5.0)
+
+
+Find the associations for a given term and convert to a data fram for plotting
+
+#find associations
+associations = findAssocs( tdm, 'apologies', 0.11) 
+associations = as.data.frame( associations) 
+associations $ terms = row.names( associations)
+associations $ terms <- factor( associations $ terms, levels = associations $ terms)
+Plot the associations
+
+#plot the associations
+ggplot( associations, aes( y = terms)) + 
+  geom_point( aes( x = apologies), data = associations, size = 5) + 
+  theme_gdocs() + 
+  geom_text( aes( x = apologies, label = apologies), colour ="darkred", hjust = -0.25, size = 6) + 
+  theme( text = element_text( size = 20), axis.title.y = element_blank())
+
+
+Create word networks based on the associations firs find tweets with a targeted key word
+
+library( igraph) 
+## 
+## Attaching package: 'igraph'
+## The following objects are masked from 'package:stats':
+## 
+##     decompose, spectrum
+## The following object is masked from 'package:base':
+## 
+##     union
+refund <- tweets[ grep("refund", tweets$text, ignore.case = T), ]
+#deprecate the following
+#refund.reader <â readTabular( mapping = list( content =" text", id =" ID"))
+#refund.df=data.frame(doc_id=seq(1:nrow(refund)),text=refund$text) 
+Get the corpus based on the targeted key word
+
+#refund.corpus <â VCorpus( DataframeSource( refund[ 1: 3,]), readerControl = list( reader = refund.reader)) 
+refund.corpus <-VCorpus( DataframeSource( refund[1:3,]))
+refund.corpus <- clean.corpus( refund.corpus) 
+refund.tdm <- TermDocumentMatrix( refund.corpus, control = list( weighting = weightTf))
+Generate the adjancey matrix for the key terms This will be based on matrix multiplication
+
+#adj.m <- all %*% t( all)
+library( igraph) 
+refund.m <- as.matrix( refund.tdm)
+refund.adj = refund.m %*% t( refund.m) 
+refund.adj = graph.adjacency( refund.adj, weighted = TRUE, mode ="undirected", diag = T) 
+refund.adj = simplify( refund.adj)
+Plot the network based on the selected word this will involve specifying the edge characteristics
+
+plot.igraph( refund.adj, vertex.shape ="none", 
+             vertex.label.font = 2, 
+             vertex.label.color ="darkred", 
+             vertex.label.cex = .7, 
+             edge.color ="gray85") 
+              title( main ='@ DeltaAssist Refund Word Network')
+ Generate a network with qdap library This does not require the creation of the tdm or the adjancey matrix
+
+library( qdap) 
+## Loading required package: qdapDictionaries
+## Loading required package: qdapRegex
+## 
+## Attaching package: 'qdapRegex'
+## The following object is masked from 'package:ggplot2':
+## 
+##     %+%
+## Loading required package: qdapTools
+## Loading required package: RColorBrewer
+## 
+## Attaching package: 'qdap'
+## The following objects are masked from 'package:igraph':
+## 
+##     %>%, diversity
+## The following objects are masked from 'package:tm':
+## 
+##     as.DocumentTermMatrix, as.TermDocumentMatrix
+## The following object is masked from 'package:NLP':
+## 
+##     ngrams
+## The following object is masked from 'package:base':
+## 
+##     Filter
+word_network_plot( refund $ text[ 1: 3]) 
+        title( main ='@ DeltaAssist Refund Word Network')
+ Using qdap find tweets with a given word and internally create the adjancey matrix add more terms by adding a comma and term in quotes
+
+word_associate( tweets $ text, match.string = c('refund'), 
+                stopwords = Top200Words, 
+                network.plot = T, 
+                cloud.colors = c('gray85','darkred')) 
+## Warning in text2color(words = V(g)$label, recode.words = target.words,
+## colors = label.colors): length of colors should be 1 more than length of
+## recode.words
+##    row group unit text                                                                                                                                     
+## 1   49   all   49 @lanaandlovely For future reference, we do have fare options that are fully refundable and changeable. *KC                               
+## 2  347   all  347 @gsstan Hello Andrew. Apologies for the delay. Any possible refund of your ticket, you will have to speak with one of our airport... 1/2 
+## 3  487   all  487 @NickRogersRx I'm sorry, but I'm not able to offer a refund on something like this. Apologies that I'm unable to help. *WG               
+## 4  489   all  489 @NickRogersRx I don't see a receipt for anything other than the ticket itself, so it may have been refunded already. *WG                 
+## 5 1004   all 1004 @Aj_Marshall17 AJ. Are you asking to cancel your flight and be refunded. Please follow/DM your confirmation number so I can take a... 1/2
+## 6 1043   all 1043 @Kyrrie_Twin Kyrrie, we offer a Risk Free refunds for issues like this. Did you contact us within 24hrs when noticed this error? *VM     
+## 7 1091   all 1091 @TchCzarina The miles would be redeposited. Please contact refunds to check on the status of your refund. https://t.co/V4ImFwVZpA *EC
+## 
+## Match Terms
+## ===========
+## 
+## List 1:
+## refundable, refund, refunded, refunds
+## 
+            title( main ='@ DeltaAssist Refund Word Network')
+
+
+reduce the number of terms in the matrix based on Sparse terms and generate a dendogram
+
+tdm2 <- removeSparseTerms( tdm, sparse = 0.975)
+hc <- hclust( dist( tdm2, method ="euclidean"), method ="complete")
+plot( hc, yaxt ='n', main ='@ DeltaAssist Dendrogram')
+
+
+add color to the dendrogram and separate out by different clusters
+
+dend.change <- function( n) { if (is.leaf( n)) {
+  a <- attributes( n) 
+  labCol <- labelColors[ clusMember[ which( names( clusMember) == a $ label)]] 
+  attr( n, "nodePar") <- c( a $ nodePar, lab.col = labCol) 
+} 
+  n 
+  }
+hcd = as.dendrogram( hc) 
+clusMember =cutree( hc, 4) 
+labelColors = c('darkgrey', 'darkred', 'black', '#bada55') 
+clusDendro = dendrapply( hcd, dend.change) 
+plot( clusDendro, main = "@ DeltaAssist Dendrogram", type = "triangle", yaxt ='n')
+ View the dendrogram in a different form
+
+library( dendextend) 
+## 
+## ---------------------
+## Welcome to dendextend version 1.9.0
+## Type citation('dendextend') for how to cite the package.
+## 
+## Type browseVignettes(package = 'dendextend') for the package vignette.
+## The github page is: https://github.com/talgalili/dendextend/
+## 
+## Suggestions and bug-reports can be submitted at: https://github.com/talgalili/dendextend/issues
+## Or contact: <tal.galili@gmail.com>
+## 
+##  To suppress this message use:  suppressPackageStartupMessages(library(dendextend))
+## ---------------------
+## 
+## Attaching package: 'dendextend'
+## The following object is masked from 'package:qdap':
+## 
+##     %>%
+## The following object is masked from 'package:stats':
+## 
+##     cutree
+install.packages("circlize", repos='http://cran.us.r-project.org')
+## Installing package into 'C:/Users/bachh/OneDrive/Documents/R/win-library/3.5'
+## (as 'lib' is unspecified)
+## package 'circlize' successfully unpacked and MD5 sums checked
+## 
+## The downloaded binary packages are in
+##  C:\Users\bachh\AppData\Local\Temp\RtmpY1gRdf\downloaded_packages
+library(circlize) 
+## ========================================
+## circlize version 0.4.6
+## CRAN page: https://cran.r-project.org/package=circlize
+## Github page: https://github.com/jokergoo/circlize
+## Documentation: http://jokergoo.github.io/circlize_book/book/
+## 
+## If you use it in published research, please cite:
+## Gu, Z. circlize implements and enhances circular visualization 
+##   in R. Bioinformatics 2014.
+## ========================================
+## 
+## Attaching package: 'circlize'
+## The following object is masked from 'package:igraph':
+## 
+##     degree
+hcd <- color_labels( hcd, 4, col = c('#bada55','darkgrey', "black", 'darkred')) 
+hcd <- color_branches( hcd, 4, col = c('#bada55','darkgrey', "black", 'darkred')) 
+circlize_dendrogram( hcd, labels_track_height = 0.5, dend_track_height = 0.4)
+
+
+Now we want to see how this information shows up in a word cloud first set up two functions to clean up the corpus
+
+library( tm) 
+library( wordcloud) 
+tryTolower <- function( x){ 
+  y = NA 
+  try_error = tryCatch( tolower( x), error = function( e) e) 
+if (!inherits( try_error, 'error')) 
+  y = tolower( x) 
+return( y) 
+} 
+custom.stopwords <- c( stopwords('english'), 'sorry', 'amp', 'delta', 'amazon') 
+clean.vec <- function( text.vec){ text.vec <- tryTolower( text.vec) 
+  text.vec <- removeWords( text.vec, custom.stopwords) 
+  text.vec <- removePunctuation( text.vec) 
+  text.vec <- stripWhitespace( text.vec) 
+  text.vec <- removeNumbers( text.vec) 
+  return( text.vec) 
+  }
+We are going to compare two corpuses
+
+amzn <- read.csv("C:/Users/bachh/OneDrive/Desktop/Textbooks/Textbooks/TBANLT570/amzn_cs.csv")
+delta <- read.csv("C:/Users/bachh/OneDrive/Desktop/Textbooks/Textbooks/TBANLT570//oct_delta.csv")
+amzn.vec <- clean.vec( amzn $ text) 
+delta.vec <- clean.vec( delta $ text)
+Now collapse both corpus into documents the purpose is to examine both and compare them
+
+amzn.vec <- paste( amzn.vec, collapse = " ") 
+delta.vec <- paste( delta.vec, collapse = " ") 
+all <- c( amzn.vec, delta.vec) 
+corpus <- VCorpus( VectorSource( all))
+create a tdm based on the revised corpus
+
+tdm = TermDocumentMatrix( corpus) 
+tdm.m = as.matrix( tdm) 
+#name the columns
+colnames( tdm.m)<- c("Amazon", "delta")
+tdm.m[3480:3490,]
+##              Docs
+## Terms         Amazon delta
+##   sonijignesh      4     0
+##   sont             2     0
+##   soon            14    16
+##   sooo             0     1
+##   sootawn          0     1
+##   sophiesoph       0     1
+##   soraparuq        0     2
+##   sort             2     0
+##   sorted           5     0
+##   soumojit         1     0
+##   sound            2     1
+now show the word cloud by calling the commonality plot - shows words that are common to both
+
+#show the color palette
+display.brewer.all()
+
+
+#pick purples can be any color
+pal <- brewer.pal( 8, "Purples")
+#use the darker colors
+pal <- pal[-( 1: 4)]
+#generate the commonality cloud
+commonality.cloud( tdm.m, max.words = 200, random.order = FALSE, colors = pal)
+ compare the two corpora in the a cloud using different colors
+
+comparison.cloud( tdm.m, max.words = 200, random.order = FALSE, title.size = 1.0, 
+                  colors = brewer.pal( ncol(tdm.m),"Dark2"))
+
+Now let’s look at the relative differences between common words by the two corpus
+
+library( plotrix) 
+common.words <- subset( tdm.m, tdm.m[, 1] > 0 & tdm.m[, 2] > 0)
+tail( common.words)
+##          Docs
+## Terms     Amazon delta
+##   working     11    17
+##   wow          2    10
+##   write        1     1
+##   wrong        1     2
+##   yes          4    28
+##   yet         14     3
+#calculate the differences between the two columns of common words
+
+difference <- abs( common.words[, 1] - common.words[, 2])
+
+#combine the differences with the common words 
+common.words <- cbind( common.words, difference) 
+#sort by the difference column in decreasing order
+common.words <- common.words[ order( common.words[, 3], decreasing = TRUE), ]
+
+#select the top 25 words and create a data frame
+top25.df <- data.frame( x = common.words[ 1: 25, 1], 
+                         y = common.words[ 1: 25, 2], 
+                         labels = rownames(common.words[ 1: 25, ]))
+Create a pyramid plot
+
+pyramid.plot(top25.df$x, top25.df$y, 
+              labels = top25.df$labels, 
+#change gap to show longer words
+                          gap = 20, 
+              top.labels = c("Amazon", "Words", "delta"), 
+              main = "Words in Common", 
+              laxlab = NULL, raxlab = NULL, unit = NULL)
+
+
+## [1] 5.1 4.1 4.1 2.1
